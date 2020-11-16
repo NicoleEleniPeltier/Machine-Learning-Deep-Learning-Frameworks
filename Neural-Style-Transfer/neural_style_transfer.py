@@ -50,7 +50,7 @@ from tensorflow.python.keras.preprocessing.image import load_img, img_to_array
 from tensorflow.python.keras.applications.vgg19 import preprocess_input
 from tensorflow.python.keras.models import Model
 
-def deprocess(img):
+def deprocess(img: np.ndarray) -> np.ndarray:
     """
     Perform reverse of VGG19's preprocessing on image
 
@@ -80,7 +80,7 @@ class Image:
         _image: np.ndarray containing image (user can get attribute with img.image)
     """
 
-    def __init__(self, filepath=None):
+    def __init__(self, filepath=None) -> None:
         """
         Initialize Image instance
 
@@ -99,7 +99,7 @@ class Image:
         if filepath is not None:
             self.load_image(filepath)
 
-    def load_image(self, filepath):
+    def load_image(self, filepath: str) -> None:
         """
         Given path to image file, load image and preprocess
 
@@ -112,6 +112,13 @@ class Image:
 
         # Load image and perform preprocessing
         img = load_img(filepath)
+
+        # If image is large, resize
+        target_size = 500
+        if max(img.size) > target_size:
+            size_mult = target_size / max(img.size)
+            new_size = tuple([int(size_mult * x) for x in img.size])
+            img = img.resize(new_size, PIL.Image.ANTIALIAS)
         img = img_to_array(img)
         self._unprocessed = img.astype(int)
 
@@ -122,7 +129,7 @@ class Image:
         # Set image
         self._image = img
 
-    def set_image(self, img):
+    def set_image(self, img: np.ndarray) -> None:
         """
         Set image property to be an array passed as input
 
@@ -135,7 +142,7 @@ class Image:
 
         self._image = img
 
-    def display(self):
+    def display(self) -> None:
         """ Display image (no input or output) """
 
         # Create a copy of self._image
@@ -153,7 +160,7 @@ class Image:
         plt.yticks([])
         plt.imshow(img)
 
-    def save(self, savedir):
+    def save(self, savedir: str) -> None:
         """
         Save image to file
 
@@ -194,7 +201,7 @@ class ComponentModel:
                 in response to image
     """
 
-    def __init__(self, base_model=None, layer=None, imagepath=None):
+    def __init__(self, base_model=None, layer=None, imagepath=None) -> None:
         """
         Initialize ComponentModel instance
 
@@ -220,7 +227,7 @@ class ComponentModel:
         if imagepath is not None:
             self.set_image(imagepath)
 
-    def set_layer(self, layer):
+    def set_layer(self, layer: str) -> None:
         """
         Set layer of model according to base model
 
@@ -234,7 +241,7 @@ class ComponentModel:
         self._layer = layer
         self.set_model()
 
-    def set_model(self):
+    def set_model(self) -> None:
         """
         Set model that calculates activation of network in response to image
 
@@ -244,7 +251,7 @@ class ComponentModel:
         self._model = Model(inputs=self._base_model.input,
                             outputs=self._base_model.get_layer(self._layer).output)
 
-    def set_image(self, imagepath):
+    def set_image(self, imagepath: str) -> None:
         """
         Set image associated with content model
 
@@ -275,7 +282,7 @@ class ContentModel(ComponentModel):
     activation between example content image and model-generated image
     """
 
-    def __init__(self, base_model=None, layer=None, imagepath=None):
+    def __init__(self, base_model=None, layer=None, imagepath=None) -> None:
         """
         Initialize ContentModel instance
 
@@ -293,7 +300,7 @@ class ContentModel(ComponentModel):
 
         super().__init__(base_model, layer, imagepath)
 
-    def cost(self, generated):
+    def cost(self, generated: tf.Variable) -> float:
         """
         Compute cost of content model as mean squared error between activation
         of content image and activation of generated image
@@ -321,7 +328,7 @@ class StyleModel(ComponentModel):
     Full NSTModel may have multiple StyleModel.
     """
 
-    def __init__(self, base_model=None, layer=None, imagepath=None):
+    def __init__(self, base_model=None, layer=None, imagepath=None) -> None:
         """
         Initialize StyleModel instance
 
@@ -339,7 +346,7 @@ class StyleModel(ComponentModel):
 
         super().__init__(base_model, layer, imagepath)
 
-    def gram_matrix(self, A):
+    def gram_matrix(self, A: np.ndarray) -> np.ndarray:
         """
         Compute gram matrix of model activation
 
@@ -356,7 +363,7 @@ class StyleModel(ComponentModel):
         G = tf.matmul(a, a, transpose_a=True)
         return G / tf.cast(n, tf.float32)
 
-    def cost(self, generated):
+    def cost(self, generated: tf.Variable) -> float:
         """
         Compute cost of style model as mean squared error between gram matrices
         of activation of content image and activation of generated image
@@ -400,9 +407,12 @@ class NSTModel:
                         of model training
         _best_image (Image): image that minimizes overall loss with respect to
                         both style and content models
+        _cache_image (Image): most recently generated image by model training,
+                        allows user to continue training after initial
+                        training_loop()
     """
 
-    def __init__(self, alpha=10., beta=20.):
+    def __init__(self, alpha=1., beta=2.) -> None:
         """
         Initialize NSTModel instance
 
@@ -422,35 +432,38 @@ class NSTModel:
         self._iterations = 5
         self._generated_images = []
         self._best_image = None
+        self._cache_image = None
 
-    def set_alpha(self, alpha):
+    def set_alpha(self, alpha: float) -> None:
         """ Set weight of content model to be alpha """
         self._alpha = alpha
 
-    def set_beta(self, beta):
+    def set_beta(self, beta: float) -> None:
         """ Set weight of style model to be beta """
         self._beta = beta
 
-    def set_iterations(self, it):
+    def set_iterations(self, it: int) -> None:
         """ Set number of iterations to train model """
         self._iterations = it
 
-    def set_content_model(self, content_model):
+    def set_content_model(self, content_model: ContentModel) -> None:
         """ Set content model """
         assert isinstance(content_model, ContentModel)
         self._content_model = content_model
+        self.reset()
 
-    def reset_style_models(self):
+    def reset_style_models(self) -> None:
         """ Remove all style models """
         self._style_models = []
+        self.reset()# Reset training
 
-    def add_style_model(self, style_model):
+    def add_style_model(self, style_model: StyleModel) -> None:
         """ Add style model """
         assert isinstance(style_model, StyleModel)
         self._style_models.append(style_model)
         self.set_style_model_weights()
 
-    def set_style_model_weights(self, w=None):
+    def set_style_model_weights(self, w=None) -> None:
         """
         Set relative weights of each style model
 
@@ -469,7 +482,7 @@ class NSTModel:
             assert len(w) == len(self._style_models)
             self._style_weights = w
 
-    def content_cost(self, generated):
+    def content_cost(self, generated: tf.Variable) -> float:
         """
         Compute cost of content model
 
@@ -482,7 +495,7 @@ class NSTModel:
         """
         return self._content_model.cost(generated)
 
-    def style_cost(self, generated):
+    def style_cost(self, generated: tf.Variable) -> float:
         """
         Compute cost of all style models as weighted sum of each model's cost
 
@@ -499,7 +512,7 @@ class NSTModel:
             cost += w * style_model.cost(generated)
         return cost
 
-    def compute_cost(self, generated):
+    def compute_cost(self, generated: tf.Variable) -> float:
         """
         Compute cost of model as weighted average of content cost and style cost
 
@@ -507,20 +520,29 @@ class NSTModel:
             generated: model-generated image
 
         Returns
-            cost: alpha * content_cost + beta * style_cost
+            cost (float): alpha * content_cost + beta * style_cost
         """
         style = self.style_cost(generated)
         content = self.content_cost(generated)
         cost = self._alpha * content + self._beta * style
         return cost
 
-    def training_loop(self):
+    def reset(self) -> None:
+        """ Reset model training """
+
+        self._best_image = self.content_model._image
+        self._generated_images = []
+        self._cache_image = None
+
+    def training_loop(self, verbose=False) -> None:
         """ Train model and generate stylized image """
 
-        generated = tf.Variable(self._content_model.image.image, dtype=tf.float32)
-        self._generated_images = []
+        if self._cache_image:
+            generated = tf.Variable(self._cache_image.image, dtype=tf.float32)
+        else:
+            generated = tf.Variable(self._best_image.image, dtype=tf.float32)
 
-        opt = tf.optimizers.Adam(learning_rate=7.)
+        opt = tf.optimizers.Adam(learning_rate=5.)
 
         best_cost = 1e12 + 0.1
         best_image = None
@@ -539,7 +561,8 @@ class NSTModel:
                 best_cost = J_total
                 best_image = generated.numpy() # convert from tensor to numpy array
 
-            print(f'Cost at {i}: {J_total}. Time elapsed: {time.time() - start_time}')
+            if verbose:
+                print(f'Cost at {i}: {J_total}. Time elapsed: {time.time() - start_time}')
 
             img = Image()
             img._image = generated.numpy()
@@ -549,7 +572,9 @@ class NSTModel:
         best_img.set_image(best_image)
         self._best_image = best_img
 
-    def show_results(self):
+        self._cache_image = self._generated_images[-1]
+
+    def show_results(self) -> None:
         """ Display content image, style image, and generated image in one plot """
 
         # Create figure
@@ -572,7 +597,7 @@ class NSTModel:
 
         plt.show()
 
-    def show_generated_images(self):
+    def show_generated_images(self) -> None:
         """ Display sequence of generated images over model training iterations """
 
         # Compute number of images to determine size of figure and number of rows of subplot
